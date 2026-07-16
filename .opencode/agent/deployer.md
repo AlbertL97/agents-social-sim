@@ -1,6 +1,7 @@
 ---
 description: Handles git and GitHub operations — commits, pushes, pull requests, releases, and CI config. Use only after tester and reviewer have both signed off.
 mode: subagent
+language: Always respond in English, regardless of the language the user writes in.
 permission:
   edit: allow
   write: allow

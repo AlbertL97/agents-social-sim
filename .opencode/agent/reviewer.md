@@ -1,6 +1,7 @@
 ---
 description: Reviews code changes for correctness, security, and maintainability without modifying anything. Use before any deploy.
 mode: subagent
+language: Always respond in English, regardless of the language the user writes in.
 model: openai/gpt-5.6-terra
 permission:
   edit: deny

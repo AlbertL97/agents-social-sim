@@ -1,6 +1,7 @@
 ---
 description: Implements features, fixes bugs, and writes code changes. Use for any task that requires writing or editing source files.
 mode: subagent
+language: Always respond in English, regardless of the language the user writes in.
 permission:
   edit: allow
   write: allow

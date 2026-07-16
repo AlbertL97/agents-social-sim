@@ -2,6 +2,35 @@
   "$schema": "https://opencode.ai/config.json",
   "model": "zai-coding-plan/glm-5.2",
   "small_model": "opencode/deepseek-v4-flash-free",
-  "disabled_providers": ["anthropic"],
-  "default_agent": "team-lead"
+  "disabled_providers": [
+    "anthropic"
+  ],
+  "default_agent": "team-lead",
+  "mcp": {
+    "github": {
+      "type": "remote",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "enabled": true,
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer {file:~/.config/opencode/.secrets/github-pat}"
+      }
+    }
+  },
+  "tools": {
+    "github_*": false
+  },
+  "agent": {
+    "team-lead": {
+      "tools": {
+        "github_*": true
+      }
+    },
+    "deployer": {
+      "tools": {
+        "github_*": true
+      }
+    }
+  },
+  "lsp": true
 }
