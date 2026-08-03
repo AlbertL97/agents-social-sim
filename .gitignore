@@ -4,3 +4,9 @@ research-logs/
 *.log
 __pycache__/
 *.pyc
+
+# social-sim: never commit the venv, local JSON state, or build artifacts
+projects/social-sim/.venv/
+projects/social-sim/.local-state/
+projects/social-sim/**/__pycache__/
+.pytest_cache/
