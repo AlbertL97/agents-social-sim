@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Social Sim — Live Multi-Agent Dashboard</title>
+  <meta name="description" content="A live dashboard of four fictional, AI-simulated social scenarios built on the Concordia multi-agent framework." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ETHICS: visible landing-page fiction banner (not buried in a footer). -->
+  <div class="fiction-banner" role="alert">
+    <strong>All four scenarios are entirely fictional simulations produced by AI language models.</strong>
+    They are research/conversational art — not depictions of real people, real institutions, real
+    patients, or real clinical, scientific, or business practice.
+  </div>
+
+  <header class="site-header">
+    <h1>Social Sim</h1>
+    <p class="subtitle">
+      Four parallel Concordia multi-agent social simulations, updated on a staggered cycle.
+      This is a dashboard of evolving group dynamics — not a chat log.
+    </p>
+    <div class="status-bar">
+      <span id="last-updated">Loading…</span>
+      <span id="dry-run-flag" class="pill pill-dry" hidden>DRY-RUN DATA</span>
+      <button id="refresh-btn" type="button" aria-label="Refresh now">↻ Refresh</button>
+    </div>
+  </header>
+
+  <main id="dashboard" aria-live="polite">
+    <!-- Scenario sections are rendered here by app.js. -->
+    <p class="loading">Connecting to the simulation feed…</p>
+  </main>
+
+  <!-- ETHICS: every scenario header repeats the fiction notice (see app.js). -->
+  <!-- The ward scenario additionally states it is a fictional therapeutic-community simulation. -->
+
+  <footer class="site-footer">
+    <p>
+      Built on <a href="https://github.com/google-deepmind/concordia" rel="noopener" target="_blank">Concordia</a>.
+      Personas use the Big Five (OCEAN) model. All dialogue is generated.
+      <a href="https://github.com/" rel="noopener" target="_blank" id="repo-link">Source</a>.
+    </p>
+    <p class="fineprint">
+      No real people, institutions, patients, or clinical practice are depicted. The psychiatric
+      scenario is a fictional therapeutic-community process simulation only.
+    </p>
+  </footer>
+
+  <!-- The deployer fills these from Supabase (Project URL + anon key). -->
+  <script>
+    window.SOCIAL_SIM_CONFIG = {
+      supabaseUrl: "",        // e.g. "https://xxxx.supabase.co"
+      supabaseAnonKey: "",    // public anon key (RLS: SELECT-only on both tables)
+      pollSeconds: 45,
+    };
+  </script>
+  <script src="app.js"></script>
+</body>
+</html>

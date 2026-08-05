@@ -1,0 +1,87 @@
+# Social-sim: stateless cron-batch advance.
+#
+# There is NO always-on server. This workflow fires an ephemeral `advance.py`
+# every ~10 minutes; each run loads persisted state, advances whichever
+# scenario/entity turns are DUE (60-min staggered cadence, HARD daily budget),
+# persists results to Supabase, and exits.
+#
+# A concurrency group prevents overlapping runs. GitHub Actions also double as
+# the scheduler; a DB run-lock (sim_meta) is a belt-and-suspenders guard.
+#
+# This workflow validates config WITHOUT secrets (the install + dry-run
+# self-check always run). The real simulation step only runs when the Gemini and
+# Supabase secrets are present; otherwise it auto-falls-back to dry-run.
+#
+# NOTE: Free GitHub Actions requires the repo to be PUBLIC. Make the repo public
+# before relying on the schedule trigger, or the cron will not fire.
+
+name: social-sim
+
+on:
+  schedule:
+    # Every 10 minutes (UTC). The scheduler inside advance.py decides what is
+    # actually due each tick, so a frequent cron is fine and cheap.
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    # Manual trigger (e.g. to validate or to force a tick).
+
+# Prevent any two social-sim runs from executing at the same time.
+concurrency:
+  group: social-sim-advance
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  advance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: projects/social-sim/requirements.txt
+
+      - name: Install dependencies
+        working-directory: projects/social-sim
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Always run the offline test suite + a dry-run self-check. These do NOT
+      # need secrets and prove the build is healthy on every scheduled tick.
+      - name: Verify (offline tests + dry-run self-check)
+        working-directory: projects/social-sim
+        run: |
+          python -m pytest tests/ -q
+          python advance.py --dry-run
+
+      # The real simulation step. Only runs when the secrets exist; otherwise it
+      # is skipped (the dry-run above already exercised the pipeline). advance.py
+      # auto-enables dry-run when GEMINI_API_KEY is unset, so passing the secret
+      # here is what switches it to LIVE mode.
+      - name: Advance simulation (LIVE if secrets present)
+        working-directory: projects/social-sim
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.6-flash' }}
+          GEMINI_EMBEDDING_MODEL: ${{ vars.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001' }}
+          DAILY_REQUEST_BUDGET: ${{ vars.DAILY_REQUEST_BUDGET || '1000' }}
+          TURN_INTERVAL_SECONDS: ${{ vars.TURN_INTERVAL_SECONDS || '3600' }}
+          MIN_CALL_SPACING_SECONDS: ${{ vars.MIN_CALL_SPACING_SECONDS || '6' }}
+          MAX_CALLS_PER_RUN: ${{ vars.MAX_CALLS_PER_RUN || '40' }}
+          MEMORY_WINDOW_TURNS: ${{ vars.MEMORY_WINDOW_TURNS || '20' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ] || [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_KEY" ]; then
+            echo "Secrets not configured — skipping LIVE advance (dry-run already exercised the pipeline)."
+            exit 0
+          fi
+          python advance.py

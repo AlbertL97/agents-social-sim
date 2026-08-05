@@ -2,6 +2,8 @@
 description: Primary orchestrator for building and shipping features. Breaks requests into tasks and delegates to coder, tester, reviewer, and deployer.
 mode: primary
 language: Always respond in English, regardless of the language the user writes in.
+permission:
+  question: allow
 ---
 # Team lead
 
