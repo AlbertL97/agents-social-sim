@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import threading
 import time
 from collections.abc import Callable, Collection, Mapping, Sequence
 from typing import Any
@@ -275,6 +276,7 @@ class GeminiLanguageModel(language_model.LanguageModel):
         self._base_backoff = float(base_backoff)
         self._rng = rng or random.Random()
         self._last_call_ts = 0.0
+        self._lock = threading.Lock()
 
     def _respect_spacing(self) -> None:
         gap = time.monotonic() - self._last_call_ts
@@ -298,8 +300,6 @@ class GeminiLanguageModel(language_model.LanguageModel):
                 f"Daily request budget exhausted ({self._budget.used}/"
                 f"{self._budget.daily_limit})."
             )
-        self._respect_spacing()
-
         config_kwargs: dict[str, Any] = {
             "temperature": temperature,
             "top_p": top_p,
@@ -317,13 +317,14 @@ class GeminiLanguageModel(language_model.LanguageModel):
         while True:
             attempt += 1
             try:
-                resp = self._client.models.generate_content(
-                    model=self._model, contents=prompt, config=config
-                )
-                self._budget.spend()
-                self._last_call_ts = time.monotonic()
-                text = getattr(resp, "text", "") or ""
-                return text
+                with self._lock:
+                    self._respect_spacing()
+                    resp = self._client.models.generate_content(
+                        model=self._model, contents=prompt, config=config
+                    )
+                    self._budget.spend()
+                    self._last_call_ts = time.monotonic()
+                    return getattr(resp, "text", "") or ""
             except BudgetExhausted:
                 raise
             except Exception as exc:  # noqa: BLE001 - backoff on API errors
@@ -354,7 +355,6 @@ class GeminiLanguageModel(language_model.LanguageModel):
             return 0, "", {}
         if not self._budget.can_spend():
             raise BudgetExhausted("Daily request budget exhausted.")
-        self._respect_spacing()
         config = None
         try:
             from google.genai import types
@@ -365,15 +365,17 @@ class GeminiLanguageModel(language_model.LanguageModel):
         while True:
             attempt += 1
             try:
-                resp = self._client.models.generate_content(
-                    model=self._model, contents=prompt, config=config
-                )
-                self._budget.spend()
-                self._last_call_ts = time.monotonic()
-                text = (getattr(resp, "text", "") or "").strip()
-                # Pick the closest response.
-                idx = _best_match(text, responses)
-                return idx, responses[idx], {"raw": text}
+                with self._lock:
+                    self._respect_spacing()
+                    resp = self._client.models.generate_content(
+                        model=self._model, contents=prompt, config=config
+                    )
+                    self._budget.spend()
+                    self._last_call_ts = time.monotonic()
+                    text = (getattr(resp, "text", "") or "").strip()
+                    # Pick the closest response.
+                    idx = _best_match(text, responses)
+                    return idx, responses[idx], {"raw": text}
             except BudgetExhausted:
                 raise
             except Exception as exc:  # noqa: BLE001

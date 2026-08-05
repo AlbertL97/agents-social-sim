@@ -185,73 +185,87 @@ def run_tick(
     if not store.acquire_run_lock(RUN_LOCK_TTL_SECONDS):
         return {"status": "skipped_overlap", "advanced": 0, "reason": "run lock held"}
 
-    # Budget (resets at midnight Pacific).
-    bdate, used = store.get_budget()
-    budget = BudgetCounter(config.daily_request_budget, used=used)
-
-    sched_cfg = SchedulerConfig.from_config(config)
-    scenario_ids = [s.id for s in scenarios]
-    entity_ids_by_scenario = {
-        s.id: [e.name for e in s.entities] for s in scenarios
-    }
-
-    # Gather last-turn timestamps from persisted entity_state rows.
-    last_turn_ts: dict[tuple[str, str], str | None] = {}
-    for sid in scenario_ids:
-        rows = store.get_entity_states(sid)
-        by_entity = {r.entity_id: r for r in rows}
-        for s in scenarios:
-            if s.id != sid:
-                continue
-            for e in s.entities:
-                row = by_entity.get(e.name)
-                last_turn_ts[(sid, e.name)] = row.last_turn_ts if row else None
-
-    due = select_due(
-        sched_cfg,
-        now_ts=now_ts,
-        scenario_ids=scenario_ids,
-        entity_ids_by_scenario=entity_ids_by_scenario,
-        last_turn_ts=last_turn_ts,
-        budget_remaining=budget.remaining(),
-    )
-    if max_turns_override is not None:
-        due = due[:max_turns_override]
-
     advanced: list[dict[str, Any]] = []
-    for item in due:
-        scenario = next(s for s in scenarios if s.id == item.scenario_id)
-        try:
-            result = advance_entity_turn(
-                store, scenario, item.entity_id, model, embedder,
-                config.memory_window_turns,
-            )
-        except BudgetExhausted:
-            break
-        if result is None:
-            break
-        # Re-read budget so the HARD cap is respected across turns within a run.
-        _, used = store.get_budget()
-        used += result.model_calls_made
-        store.set_budget(bdate, used)
-        budget.used = used
-        advanced.append(
-            {
-                "scenario_id": item.scenario_id,
-                "entity_id": item.entity_id,
-                "utterance": result.utterance[:120],
-                "calls": result.model_calls_made,
-            }
-        )
-        if budget.remaining() <= 0:
-            break
+    error: str | None = None
+    budget_used = 0
+    budget_limit = config.daily_request_budget
+    dry_run = config.dry_run
+    try:
+        # Budget (resets at midnight Pacific).
+        bdate, used = store.get_budget()
+        budget = BudgetCounter(config.daily_request_budget, used=used)
+        budget_limit = budget.daily_limit
 
-    store.release_run_lock()
+        sched_cfg = SchedulerConfig.from_config(config)
+        scenario_ids = [s.id for s in scenarios]
+        entity_ids_by_scenario = {
+            s.id: [e.name for e in s.entities] for s in scenarios
+        }
+
+        # Gather last-turn timestamps from persisted entity_state rows.
+        last_turn_ts: dict[tuple[str, str], str | None] = {}
+        for sid in scenario_ids:
+            rows = store.get_entity_states(sid)
+            by_entity = {r.entity_id: r for r in rows}
+            for s in scenarios:
+                if s.id != sid:
+                    continue
+                for e in s.entities:
+                    row = by_entity.get(e.name)
+                    last_turn_ts[(sid, e.name)] = row.last_turn_ts if row else None
+
+        due = select_due(
+            sched_cfg,
+            now_ts=now_ts,
+            scenario_ids=scenario_ids,
+            entity_ids_by_scenario=entity_ids_by_scenario,
+            last_turn_ts=last_turn_ts,
+            budget_remaining=budget.remaining(),
+        )
+        if max_turns_override is not None:
+            due = due[:max_turns_override]
+
+        for item in due:
+            scenario = next(s for s in scenarios if s.id == item.scenario_id)
+            try:
+                result = advance_entity_turn(
+                    store, scenario, item.entity_id, model, embedder,
+                    config.memory_window_turns,
+                )
+            except BudgetExhausted:
+                break
+            except Exception as exc:
+                error = f"{item.scenario_id}/{item.entity_id}: {exc!r}"
+                break
+            if result is None:
+                break
+            # Re-read budget so the HARD cap is respected across turns within a run.
+            _, used = store.get_budget()
+            used += result.model_calls_made
+            store.set_budget(bdate, used)
+            budget.used = used
+            advanced.append(
+                {
+                    "scenario_id": item.scenario_id,
+                    "entity_id": item.entity_id,
+                    "utterance": result.utterance[:120],
+                    "calls": result.model_calls_made,
+                }
+            )
+            if budget.remaining() <= 0:
+                break
+        budget_used = budget.used
+    except Exception as exc:
+        error = f"tick aborted: {exc!r}"
+    finally:
+        store.release_run_lock()
+
     return {
-        "status": "ok",
+        "status": "ok" if error is None else "error",
+        "error": error,
         "advanced": len(advanced),
         "items": advanced,
-        "budget_used": budget.used,
-        "budget_limit": budget.daily_limit,
-        "dry_run": config.dry_run,
+        "budget_used": budget_used,
+        "budget_limit": budget_limit,
+        "dry_run": dry_run,
     }
