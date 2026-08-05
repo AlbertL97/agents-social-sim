@@ -90,7 +90,7 @@ def advance_entity_turn(
     scenario_state = store.get_scenario_state(scenario.id)
     if scenario_state is None or not scenario_state.initialized:
         scenario_state = cold_start_scenario(
-            store, scenario, model, embedder, enrich=not _is_stub(model)
+            store, scenario, model, embedder, enrich=False
         )
 
     recent = store.get_recent_turns(scenario.id, memory_window_turns)
@@ -167,10 +167,6 @@ def _parse_summary(summary: str) -> list[str]:
 
 def _model_name(model) -> str:
     return getattr(model, "__class__", type(model)).__name__
-
-
-def _is_stub(model) -> bool:
-    return type(model).__name__ == "StubLanguageModel"
 
 
 def run_tick(
