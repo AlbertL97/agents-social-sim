@@ -331,6 +331,11 @@ class GeminiLanguageModel(language_model.LanguageModel):
                 if code is None and attempt > 1:
                     raise
                 if attempt > self._max_retries:
+                    if code == 429:
+                        raise BudgetExhausted(
+                            "Gemini daily quota exhausted (HTTP 429 after "
+                            f"{attempt} attempts)."
+                        )
                     raise
                 # Exponential backoff + full jitter. 429 -> longer base.
                 base = self._base_backoff * (4 if code == 429 else 1)
@@ -376,6 +381,11 @@ class GeminiLanguageModel(language_model.LanguageModel):
                 if code is None and attempt > 1:
                     raise
                 if attempt > self._max_retries:
+                    if code == 429:
+                        raise BudgetExhausted(
+                            "Gemini daily quota exhausted (HTTP 429 after "
+                            f"{attempt} attempts)."
+                        )
                     raise
                 base = self._base_backoff * (4 if code == 429 else 1)
                 sleep = self._rng.uniform(0, base * (2 ** (attempt - 1)))
