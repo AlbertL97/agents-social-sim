@@ -40,6 +40,7 @@ def cold_start_scenario(
     store: ss.StateStore,
     scenario: ScenarioDef,
     model,
+    embedder,
     enrich: bool,
 ) -> ss.ScenarioStateRow:
     """Initialize a scenario: seed formative memories + all entity_state rows."""
@@ -47,7 +48,7 @@ def cold_start_scenario(
     if enrich:
         # Production-only: enrich with LLM backstory via the Concordia initializer.
         formative = enrich_formative_via_initializer(
-            scenario, model, _no_embedder_needed(), deterministic
+            scenario, model, embedder, deterministic
         )
     else:
         formative = deterministic
@@ -62,7 +63,7 @@ def cold_start_scenario(
                 stress=e.stress,
                 stances=dict(e.stances),
                 last_utterance="",
-                last_turn_ts="",
+                last_turn_ts=None,
             )
         )
 
@@ -77,10 +78,6 @@ def cold_start_scenario(
     return row
 
 
-def _no_embedder_needed():  # placeholder kept for API symmetry
-    return None
-
-
 def advance_entity_turn(
     store: ss.StateStore,
     scenario: ScenarioDef,
@@ -93,7 +90,7 @@ def advance_entity_turn(
     scenario_state = store.get_scenario_state(scenario.id)
     if scenario_state is None or not scenario_state.initialized:
         scenario_state = cold_start_scenario(
-            store, scenario, model, enrich=not _is_stub(model)
+            store, scenario, model, embedder, enrich=not _is_stub(model)
         )
 
     recent = store.get_recent_turns(scenario.id, memory_window_turns)

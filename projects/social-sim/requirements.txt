@@ -6,12 +6,15 @@
 # Concordia multi-agent simulation framework (the engine).
 gdm-concordia==2.4.0
 
-# Google Gemini — the ONLY LLM/embedding provider used by the simulation.
+# Google Gemini — the only LLM provider (dialogue + GM resolution).
 # (Per the project LLM-budget rules: do NOT reuse opencode subscriptions.)
 google-genai==2.16.0
 
 # Supabase Free Postgres client (persistence backend).
 supabase==2.31.0
+
+# Local associative-memory embedder (no API calls; keeps Gemini for the LLM).
+scikit-learn==1.9.0
 
 # Test runner — the whole suite runs offline in --dry-run with no key.
 pytest==9.1.1

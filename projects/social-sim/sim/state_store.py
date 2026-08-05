@@ -62,7 +62,7 @@ class EntityStateRow:
     stress: str
     stances: dict[str, str]
     last_utterance: str
-    last_turn_ts: str
+    last_turn_ts: str | None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

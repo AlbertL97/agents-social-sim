@@ -4,8 +4,8 @@ Two backends, selected by ``Config.dry_run``:
 
 * **Gemini** (production): ``GeminiLanguageModel`` wraps the ``google-genai`` SDK
   with exponential backoff + jitter on HTTP 429 / 5xx, a HARD daily request
-  budget, and minimum call spacing to respect RPM. Google Gemini is the ONLY
-  provider used (per the project LLM-budget rules).
+  budget, and minimum call spacing to respect RPM. Google Gemini is the only
+  LLM provider used (per the project LLM-budget rules).
 
 * **Stub** (dry-run / tests): ``StubLanguageModel`` returns deterministic canned
   text (and canned structured-JSON for the GM-resolution prompt) so the whole
@@ -14,7 +14,9 @@ Two backends, selected by ``Config.dry_run``:
 
 Both satisfy Concordia's ``language_model.LanguageModel`` ABC
 (``sample_text`` / ``sample_choice``). The embedder factory returns a
-``str -> np.ndarray`` callable for Concordia's associative memory.
+``str -> np.ndarray`` callable for Concordia's associative memory; production
+uses a local scikit-learn ``HashingVectorizer`` (no API calls) so the per-turn
+memory re-seed stays cheap and the Gemini budget is reserved for the LLM.
 """
 
 from __future__ import annotations
@@ -211,7 +213,35 @@ class StubEmbedder:
         norm = np.linalg.norm(vec)
         if norm > 0:
             vec = vec / norm
-        return vec
+            return vec
+
+
+class HashingVectorizerEmbedder:
+    """Local, deterministic, network-free embedder for associative memory.
+
+    Maps text to a fixed-dimension, L2-normalized bag-of-(1,2)-grams vector via
+    scikit-learn's ``HashingVectorizer``. No API calls and no rate limits, so the
+    stateless re-seed-per-tick path (which adds ~50 memories per turn) stays
+    cheap and the HARD Gemini budget is reserved for dialogue + GM resolution.
+    Deterministic and stateless (no fit step), matching the ephemeral cron
+    architecture. Retrieval is lexical, which is strong for the persona/turn
+    vocabulary; swap in a neural embedder only if richer semantic recall is
+    required.
+    """
+
+    def __init__(self, n_features: int = 512, ngram_range: tuple[int, int] = (1, 2)) -> None:
+        from sklearn.feature_extraction.text import HashingVectorizer
+
+        self._vectorizer = HashingVectorizer(
+            n_features=n_features,
+            ngram_range=ngram_range,
+            norm="l2",
+            alternate_sign=True,
+            lowercase=True,
+        )
+
+    def __call__(self, text: str) -> np.ndarray:
+        return self._vectorizer.transform([text]).toarray()[0].astype(np.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -381,42 +411,14 @@ def _best_match(text: str, responses: Sequence[str]) -> int:
 def make_embedder(config) -> Callable[[str], np.ndarray]:
     """Return a ``str -> np.ndarray`` embedder for Concordia associative memory.
 
-    Dry-run uses the deterministic ``StubEmbedder``. Production uses Gemini
-    ``embed_content`` (``gemini-embedding-001``) with the same backoff policy.
+    Dry-run uses the deterministic ``StubEmbedder``. Production uses a local
+    ``HashingVectorizerEmbedder`` (scikit-learn) — no API calls, so the
+    per-turn memory re-seed (which adds ~50 memories) stays cheap and the HARD
+    Gemini budget is reserved for dialogue + GM resolution only.
     """
     if config.dry_run:
         return StubEmbedder()
-
-    from google import genai
-
-    client = genai.Client(api_key=config.gemini_api_key)
-    model = config.gemini_embedding_model
-    last_ts = [0.0]
-
-    def _embed(text: str) -> np.ndarray:
-        gap = time.monotonic() - last_ts[0]
-        if gap < 6.0:
-            time.sleep(6.0 - gap)
-        attempt = 0
-        while True:
-            attempt += 1
-            try:
-                resp = client.models.embed_content(
-                    model=model, contents=text
-                )
-                last_ts[0] = time.monotonic()
-                vals = resp.embeddings[0].values
-                arr = np.asarray(vals, dtype=np.float32)
-                norm = np.linalg.norm(arr)
-                return arr / norm if norm > 0 else arr
-            except Exception as exc:  # noqa: BLE001
-                if _api_error_code(exc) is None and attempt > 1:
-                    raise
-                if attempt > 5:
-                    raise
-                time.sleep(2.0 * (2 ** (attempt - 1)))
-
-    return _embed
+    return HashingVectorizerEmbedder()
 
 
 def build_model(config, budget: BudgetCounter) -> language_model.LanguageModel:
