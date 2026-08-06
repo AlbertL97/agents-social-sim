@@ -277,6 +277,11 @@ class GeminiLanguageModel(language_model.LanguageModel):
         self._rng = rng or random.Random()
         self._last_call_ts = 0.0
         self._lock = threading.Lock()
+        # Mirrors StubLanguageModel.call_count so the engine can compute
+        # model_calls_made per turn and the pipeline can persist an accurate
+        # daily budget. Without this, live runs report 0 calls/turn and the
+        # persisted budget never increments (the silent no-op loop bug).
+        self.call_count = 0
 
     def _respect_spacing(self) -> None:
         gap = time.monotonic() - self._last_call_ts
@@ -323,6 +328,7 @@ class GeminiLanguageModel(language_model.LanguageModel):
                         model=self._model, contents=prompt, config=config
                     )
                     self._budget.spend()
+                    self.call_count += 1
                     self._last_call_ts = time.monotonic()
                     return getattr(resp, "text", "") or ""
             except BudgetExhausted:
@@ -371,6 +377,7 @@ class GeminiLanguageModel(language_model.LanguageModel):
                         model=self._model, contents=prompt, config=config
                     )
                     self._budget.spend()
+                    self.call_count += 1
                     self._last_call_ts = time.monotonic()
                     text = (getattr(resp, "text", "") or "").strip()
                     # Pick the closest response.
@@ -438,7 +445,11 @@ def build_model(config, budget: BudgetCounter) -> language_model.LanguageModel:
     if config.dry_run:
         return StubLanguageModel()
     from google import genai
-    client = genai.Client(api_key=config.gemini_api_key)
+    from google.genai import types
+    client = genai.Client(
+        api_key=config.gemini_api_key,
+        http_options=types.HttpOptions(retry_options=None),
+    )
     return GeminiLanguageModel(
         client=client,
         model=config.gemini_model,

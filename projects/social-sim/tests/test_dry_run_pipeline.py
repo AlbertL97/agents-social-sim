@@ -109,3 +109,30 @@ def test_run_tick_full_cycle_offline(tmp_path):
     # An immediate second tick advances nothing (60-min interval not elapsed).
     summary2 = run_tick(cfg, store, model, embedder, scenarios)
     assert summary2["advanced"] == 0
+
+
+def test_budget_exhaustion_persists_and_next_tick_noops(tmp_path):
+    """Regression: when a turn exhausts the HARD daily budget mid-run, the day
+    must be marked exhausted so the next cron tick no-ops instead of retrying a
+    spent quota (the silent "1 turn ever" bug).
+
+    With a budget of 1 the stub exhausts during the first turn; the pipeline
+    must persist exhaustion, and the very next tick must advance NOTHING.
+    """
+    store = _make_store(tmp_path)
+    base = _config(tmp_path)
+    cfg = Config(**{**base.__dict__, "daily_request_budget": 1})
+    model = build_model(cfg, BudgetCounter(cfg.daily_request_budget))
+    embedder = make_embedder(cfg)
+    scenarios = load_personas(PERSONAS)
+
+    run_tick(cfg, store, model, embedder, scenarios)
+
+    # The day must now be persisted as exhausted.
+    _, used = store.get_budget()
+    assert used >= cfg.daily_request_budget
+
+    # The next tick must not attempt any model work (budget_remaining == 0).
+    summary2 = run_tick(cfg, store, model, embedder, scenarios)
+    assert summary2["status"] == "ok"
+    assert summary2["advanced"] == 0

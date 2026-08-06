@@ -238,6 +238,13 @@ def run_tick(
                 error = f"{item.scenario_id}/{item.entity_id}: {exc!r}"
                 break
             if result is None:
+                # Budget exhausted mid-turn (advance_entity_turn swallows the
+                # BudgetExhausted raised by the model's HARD-limit pre-check, or
+                # by a Gemini 429 after retries). Persist the day as EXHAUSTED so
+                # the next cron run sees no remaining budget and no-ops instead of
+                # wasting ~3-4 min of retries against an already-spent quota.
+                store.set_budget(bdate, config.daily_request_budget)
+                budget.used = config.daily_request_budget
                 break
             # Re-read budget so the HARD cap is respected across turns within a run.
             _, used = store.get_budget()
