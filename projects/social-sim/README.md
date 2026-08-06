@@ -158,17 +158,19 @@ The deployer's checklist (do **not** enable billing on the Gemini project):
    (for the read-only frontend).
 2. **GitHub secrets/variables** (repo → Settings → Secrets and variables → Actions):
    - Secrets: `GEMINI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`.
-   - Optional variables (defaults shown): `GEMINI_MODEL=gemini-3.6-flash`,
-     `GEMINI_EMBEDDING_MODEL=gemini-embedding-001`, `DAILY_REQUEST_BUDGET=1000`,
+   - Optional variables (defaults shown): `GEMINI_MODEL=gemini-3.5-flash-lite`,
+     `GEMINI_EMBEDDING_MODEL=gemini-embedding-001`, `DAILY_REQUEST_BUDGET=200`,
      `TURN_INTERVAL_SECONDS=3600`, `MIN_CALL_SPACING_SECONDS=6`,
-     `MAX_CALLS_PER_RUN=40`, `MEMORY_WINDOW_TURNS=20`.
+     `MAX_CALLS_PER_RUN=8`, `MEMORY_WINDOW_TURNS=20`.
 3. **Make the repo public** — free GitHub Actions requires a public repo for the
    `schedule` trigger to fire. (Private repos do not run scheduled workflows on
    the free plan.) The `workflow_dispatch` trigger works regardless.
-4. **Frontend → Cloudflare Pages** (or any static host). Set the build output to
-   `projects/social-sim/frontend/`. Fill `window.SOCIAL_SIM_CONFIG` in
-   `index.html` with the Supabase URL + **anon** key (never the service key).
-   The dashboard polls `entity_state` every ~45s.
+4. **Frontend → GitHub Pages** (or any static host). The included
+   `.github/workflows/deploy-dashboard.yml` publishes
+   `projects/social-sim/frontend/` to Pages on every change. Fill
+   `window.SOCIAL_SIM_CONFIG` in `index.html` with the Supabase URL + **anon**
+   (publishable) key (never the service key). The dashboard polls
+   `entity_state` + `sim_turn_log` every ~45s.
 
 Do **not** commit secrets, the venv, or real credentials. `.gitignore` already
 excludes `.venv/`, `.local-state/`, and `.env`.
@@ -182,9 +184,9 @@ See `.env.example` for every knob. The most important:
 | Var | Default | Meaning |
 |-----|---------|---------|
 | `GEMINI_API_KEY` | _(unset → dry-run)_ | Google Gemini key. **Do not enable billing.** |
-| `GEMINI_MODEL` | `gemini-3.6-flash` | Dialogue model (Flash family). |
+| `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Dialogue model. Flash-lite carries the highest free-tier RPD. |
 | `GEMINI_EMBEDDING_MODEL` | `gemini-embedding-001` | Embeddings for associative memory. |
-| `DAILY_REQUEST_BUDGET` | `1000` | HARD daily cap. |
+| `DAILY_REQUEST_BUDGET` | `200` | HARD daily cap (must be ≤ the model's free-tier RPD). |
 | `TURN_INTERVAL_SECONDS` | `3600` | Per-entity turn interval (60-min cycle). |
 | `MIN_CALL_SPACING_SECONDS` | `6` | Minimum spacing between Gemini calls (RPM). |
 | `MAX_CALLS_PER_RUN` | `40` | Cap per cron run. |
@@ -195,10 +197,25 @@ See `.env.example` for every knob. The most important:
 
 ## Budget & cadence rationale
 
-Free-tier Gemini is rate-limited by **requests per day** (RPD), which is the
-binding constraint for 24/7 operation. With 16 speaking entities and a 60-min
-cadence, the design point is comfortably under the daily budget with margin for
-retries. The budget is **HARD**: if per-turn cost makes the target cadence
-infeasible on a given day, the scheduler simply advances fewer turns and entities
-wait — that is the designed fallback, never a silent failure. Raise
-`DAILY_REQUEST_BUDGET` (or the cadence interval) to tune.
+Free-tier Gemini is rate-limited by **requests per day (RPD)**, and the limit is
+**per model**. Full-flash models (e.g. `gemini-3.5-flash`) are capped at ~20
+requests/day — enough for only a handful of turns, so most of the dashboard
+stayed empty. The `-flash-lite` family carries a far higher free-tier RPD, which
+is why it is the default: the budget becomes the limiter only at a comfortable
+cadence, not after one turn.
+
+Two further realities shape the cadence:
+
+- **The scheduler round-robins turns across all four scenarios** (cold-start
+  entities first) so the daily budget populates every dashboard section rather
+  than exhausting inside the first scenario.
+- **GitHub Actions' free-tier `schedule` trigger does not fire every 10 minutes
+  in practice** — it is batched to roughly every few hours. So the sim advances
+  a batch of turns per run (`MAX_CALLS_PER_RUN`) and the dashboard refreshes in
+  bursts.
+
+The budget is **HARD**: when it is spent, the day is marked exhausted and later
+runs no-op fast instead of wasting retries against a dead quota; it resets at
+midnight Pacific. That is the designed fallback — never a silent failure. Raise
+`DAILY_REQUEST_BUDGET` (within the model's free-tier RPD) or the cadence
+interval to tune.

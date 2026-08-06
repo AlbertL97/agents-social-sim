@@ -45,6 +45,9 @@
     },
   ];
 
+  // Quick lookup: scenario id -> display title (for the live-feed tags).
+  const SCENARIO_TAG = Object.fromEntries(SCENARIOS.map((s) => [s.id, s.title]));
+
   const FICTION_NOTICE =
     "This scenario is an entirely fictional AI simulation. Not real people, " +
     "institutions, patients, or clinical/scientific practice.";
@@ -73,6 +76,26 @@
     if (!res.ok) throw new Error(`entity_state HTTP ${res.status}`);
     const rows = await res.json();
     return { rows: rows || [], offline: false };
+  }
+
+  async function fetchRecentTurns() {
+    if (!CFG.supabaseUrl || !CFG.supabaseAnonKey) return [];
+    const url = apiUrl(
+      "sim_turn_log",
+      "select=turn_index,scenario_id,entity_id,utterance,emotion_snapshot,ts&order=turn_index.desc&limit=15"
+    );
+    try {
+      const res = await fetch(url, {
+        headers: {
+          apikey: CFG.supabaseAnonKey,
+          Authorization: `Bearer ${CFG.supabaseAnonKey}`,
+        },
+      });
+      if (!res.ok) return [];
+      return (await res.json()) || [];
+    } catch (_) {
+      return [];
+    }
   }
 
   function stressClass(stress) {
@@ -156,14 +179,12 @@
     );
   }
 
-  function render({ rows, offline }) {
+  function render({ rows, offline, turns }) {
     const byScenario = {};
     for (const r of rows || []) {
       (byScenario[r.scenario_id] = byScenario[r.scenario_id] || []).push(r);
     }
-    const html = SCENARIOS.map((s) =>
-      renderScenario(s, byScenario[s.id] || [])
-    ).join("");
+
     let prefix = "";
     if (offline) {
       prefix =
@@ -174,16 +195,82 @@
     } else {
       dryFlag.hidden = true;
     }
-    dashboard.innerHTML = prefix + html;
-    lastUpdated.textContent = offline
-      ? "Skeleton view"
-      : `Updated ${new Date().toLocaleTimeString()}`;
+
+    const feedHtml = turns && turns.length ? renderFeed(turns) : "";
+    const cardsHtml = SCENARIOS.map((s) =>
+      renderScenario(s, byScenario[s.id] || [])
+    ).join("");
+
+    dashboard.innerHTML = prefix + feedHtml + cardsHtml;
+    renderStatus(rows || [], turns || [], offline);
+  }
+
+  function renderFeed(turns) {
+    const items = turns.map(renderTurn).join("");
+    return (
+      `<section class="feed">` +
+      `<header class="feed-header">` +
+      `<h2>Live conversation</h2>` +
+      `<span class="feed-sub">most recent turns across all four scenarios</span>` +
+      `</header>` +
+      `<div class="feed-list">${items}</div>` +
+      `</section>`
+    );
+  }
+
+  function renderTurn(t) {
+    const snap = t.emotion_snapshot || {};
+    const mood = snap.mood
+      ? `<span class="turn-mood">${escapeHtml(snap.mood)}</span>`
+      : "";
+    return (
+      `<div class="turn-item scenario-${escapeHtml(t.scenario_id)}">` +
+      `<div class="turn-meta">` +
+      `<span class="turn-tag">${escapeHtml(
+        SCENARIO_TAG[t.scenario_id] || t.scenario_id
+      )}</span>` +
+      `<span class="turn-speaker">${escapeHtml(t.entity_id)}</span>` +
+      `<span class="turn-time">${timeAgo(t.ts)}</span>` +
+      `</div>` +
+      `<q class="turn-text">${escapeHtml(t.utterance || "—")}</q>` +
+      mood +
+      `</div>`
+    );
+  }
+
+  function renderStatus(rows, turns, offline) {
+    if (offline) {
+      lastUpdated.textContent = "Skeleton view";
+      lastUpdated.className = "";
+      return;
+    }
+    const scenarios = new Set(rows.map((r) => r.scenario_id)).size;
+    const latest = turns
+      .map((t) => new Date(t.ts).getTime())
+      .filter(Number.isFinite)
+      .sort((a, b) => b - a)[0];
+    let dot = "●";
+    let cls = "ok";
+    if (latest) {
+      const ageHrs = (Date.now() - latest) / 3600000;
+      if (ageHrs > 6) {
+        dot = "◐";
+        cls = "stale";
+      }
+    }
+    lastUpdated.className = "status-text status-" + cls;
+    lastUpdated.textContent =
+      `${dot} ${scenarios}/4 scenarios · ${rows.length} entities · ` +
+      `${turns.length} recent turns · updated ${new Date().toLocaleTimeString()}`;
   }
 
   async function tick() {
     try {
-      const data = await fetchEntityStates();
-      render(data);
+      const [entityData, turns] = await Promise.all([
+        fetchEntityStates(),
+        fetchRecentTurns(),
+      ]);
+      render({ ...entityData, turns });
     } catch (err) {
       dashboard.innerHTML =
         `<div class="error">Could not load the simulation feed: ` +
