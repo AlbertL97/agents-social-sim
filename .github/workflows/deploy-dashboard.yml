@@ -1,0 +1,48 @@
+# Deploy the social-sim dashboard (static SPA) to GitHub Pages.
+#
+# The repo is public, so GitHub Pages is free. The frontend lives in a
+# subfolder (projects/social-sim/frontend/), so we use the official Pages
+# deploy actions instead of the branch-root source. Triggered on frontend
+# changes or manually.
+
+name: deploy-dashboard
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'projects/social-sim/frontend/**'
+      - '.github/workflows/deploy-dashboard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write   # required by actions/deploy-pages
+
+# One deployment at a time.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: projects/social-sim/frontend
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
