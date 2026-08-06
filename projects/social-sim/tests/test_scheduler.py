@@ -105,6 +105,20 @@ def test_max_per_run_cap():
     assert len(due) == 3
 
 
+def test_budget_round_robins_across_scenarios():
+    """A small budget must spread turns across ALL scenarios (one each), not
+    exhaust on the first scenario — so every dashboard section populates."""
+    due = select_due(
+        _cfg(max_per_run=4),
+        now_ts=1_000_000,
+        scenario_ids=SCENARIO_IDS,
+        entity_ids_by_scenario=ENTITIES,
+        last_turn_ts={(s, e): None for s in SCENARIO_IDS for e in ENTITIES[s]},
+        budget_remaining=4,
+    )
+    assert [item.scenario_id for item in due] == SCENARIO_IDS
+
+
 def test_estimate_documents_budget_tension():
     """1000 budget, ~5 calls/turn, 16 entities => well under 24 turns/entity/day."""
     turns = estimate_daily_turns_per_entity(1000, calls_per_turn=5, num_entities=16)

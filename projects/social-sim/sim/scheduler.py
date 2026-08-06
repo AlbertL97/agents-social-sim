@@ -112,9 +112,43 @@ def select_due(
                     AdvanceItem(sid, eid, reason="interval-elapsed")
                 )
 
+    # Round-robin due items across scenarios (cold-start first, then interval)
+    # before capping. With a small daily budget this spreads turns across all
+    # scenarios instead of exhausting the quota on the first scenario's entities
+    # (which left 3/4 of the dashboard empty).
+    due = _interleave_by_scenario(due, scenario_ids)
+
     # Cap by per-run limit and remaining budget.
     cap = min(sched_cfg.max_calls_per_run, budget_remaining)
     return due[:cap]
+
+
+def _interleave_by_scenario(
+    items: list[AdvanceItem], scenario_ids: list[str]
+) -> list[AdvanceItem]:
+    """Round-robin items across scenarios, cold-start items first.
+
+    Emits one item per scenario in turn (in ``scenario_ids`` order); within each
+    scenario's queue, never-spoken (cold-start) items precede interval-elapsed
+    ones. So the daily budget populates every scenario before any entity speaks
+    twice, and the dashboard fills evenly.
+    """
+    cold: dict[str, list[AdvanceItem]] = {sid: [] for sid in scenario_ids}
+    elapsed: dict[str, list[AdvanceItem]] = {sid: [] for sid in scenario_ids}
+    for item in items:
+        (cold if item.reason == "cold-start" else elapsed).setdefault(
+            item.scenario_id, []
+        ).append(item)
+    queues = [
+        cold.get(sid, []) + elapsed.get(sid, []) for sid in scenario_ids
+    ]
+    out: list[AdvanceItem] = []
+    max_len = max((len(q) for q in queues), default=0)
+    for i in range(max_len):
+        for q in queues:
+            if i < len(q):
+                out.append(q[i])
+    return out
 
 
 def is_budget_exhausted(used: int, daily_budget: int) -> bool:
