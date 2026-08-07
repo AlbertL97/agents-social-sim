@@ -1,11 +1,45 @@
 # agents-social-sim
 
-**A live, always-on multi-agent social simulation dashboard** — four fictional
-groups (a family, a startup team, a research group, and a therapeutic community)
-whose AI personas converse with each other on a staggered cadence, broadcast to
-a public dashboard.
+A live, always-on laboratory for **social behavior between AI agents.** Four
+fictional groups — a family, a startup team, a research group, and a therapeutic
+community — are each played by AI personas (sketched with the Big Five / OCEAN
+model) that converse with each other on a staggered cadence, and the resulting
+group dynamics stream to a public dashboard you can watch unfold in real time.
 
-🌐 **Live dashboard: https://albertl97.github.io/agents-social-sim/**
+> 🌐 **Watch the live simulation → <https://albertl97.github.io/agents-social-sim/>**
+
+---
+
+## Why study social behavior among AI systems?
+
+Most evaluation of large language models is **solitary and single-turn**: one
+model answering one prompt, scored in isolation. But AI systems are increasingly
+deployed in settings where they do not act alone — they negotiate, collaborate,
+moderate, advise, and coordinate, with other agents and with people.
+
+The behaviors that matter most in those settings are **emergent and relational**:
+persuasion and resistance, trust and betrayal, coalition formation, the rise and
+erosion of norms, conflict that escalates or de-escalates, the way a group
+converges on — or fails to converge on — a shared decision. None of them appear
+when you probe a single model once. They surface only when **multiple agents act
+on each other over time**, which makes them hard to measure and increasingly hard
+to ignore. As autonomous agents take on real roles, group-level dynamics become
+a safety and alignment concern, not a curiosity — polarization cascades,
+sycophancy loops, tacit collusion, and the slow erosion of trust are properties
+of the *collective*, invisible to any single-agent benchmark.
+
+**Multi-agent social simulation is a cheap, controllable laboratory for exactly
+these phenomena.** Hold the "world" fixed and vary one thing at a time — a
+persona's traits, the rules of conversation, who knows what — then watch how the
+group's behavior changes. It is reproducible and ethical (no human subjects), and
+it can be observed continuously rather than in one-off transcripts. This project
+builds the always-on plumbing to run such experiments and observe them live,
+grounded in Google DeepMind's
+[Concordia](https://github.com/google-deepmind/concordia) multi-agent framework.
+
+> **Watch it happen.** The four scenarios are running right now at
+> **<https://albertl97.github.io/agents-social-sim/>** — new turns appear on the
+> dashboard as the daily model budget allows.
 
 > **Ethics notice.** Every scenario — including the therapeutic-community ward —
 > is an **entirely fictional simulation produced by language models**. No real
@@ -14,31 +48,24 @@ a public dashboard.
 
 ---
 
-## Why this exists
+## How this was built (a testbed for agentic coding)
 
-This repository has two intertwined purposes.
+Beyond the research goal above, this repository is kept as an honest artifact of
+*how* it was built. The whole system — architecture, the
+stateless-Concordia-over-cron design, the budget/scheduler logic, the dashboard,
+and a round of live debugging — was specified, written, and repaired by **GLM-5.2
+driving [opencode](https://opencode.ai)**, with a human in the loop for goals and
+go/no-go decisions only. The commit history shows the model designing the system,
+hardening it across several iterations, and diagnosing a subtle live failure (a
+silent daily-budget drain that left the sim at "one turn ever") from raw GitHub
+Actions logs. A central question the project probes: **how well does a single
+coding model hold a non-trivial, long-horizon system together** — across
+cold-start state reconstruction, rate-limit economics, and a public deploy — when
+it can only act through ephemeral tool calls?
 
-### 1. A testbed for GLM-5.2 inside opencode
-
-The whole system — architecture, the stateless-Concordia-over-cron design, the
-budget/scheduler logic, the dashboard, and a round of live debugging — was
-specified, written, and repaired by **GLM-5.2 driving
-[opencode](https://opencode.ai)**, with a human in the loop for goals and
-go/no-go decisions only. The repo is intentionally kept as an honest artifact of
-that workflow: the commit history shows the model designing the system,
-hardening it across several iterations, and diagnosing a subtle live failure
-(a silent daily-budget drain that left the sim at "one turn ever") from raw
-GitHub Actions logs.
-
-A central question the project probes: **how well does a single coding model
-hold a non-trivial, long-horizon system together** — across cold-start state
-reconstruction, rate-limit economics, and a public deploy — when it can only act
-through ephemeral tool calls?
-
-### 2. How delegating to specialized agents helped
-
-opencode lets the primary agent **delegate** focused subtasks to purpose-built
-subagents rather than doing everything inline. That shaped how this was built:
+opencode also lets the primary agent **delegate** focused subtasks to
+purpose-built subagents rather than doing everything inline. That shaped how this
+was built:
 
 - An **explorer** agent mapped the existing code and conventions before any code
   was written, so new modules matched the repo's style and imports.
@@ -53,19 +80,6 @@ Delegation here is less about raw speed and more about **separation of
 concerns**: each agent has a narrow, inspectable job, and the primary agent
 orchestrates. The `.opencode/` and `.agents/` configuration in this repo is part
 of that setup.
-
-### 3. Why study social interaction *between* AI agents
-
-Most LLM evaluation treats a single model answering a single prompt. But the
-interesting dynamics — persuasion, coalition formation, trust, escalating or
-de-escalating conflict, the way a group negotiates a shared problem — only
-appear when **multiple agents act on each other over time**. Multi-agent social
-simulation is a cheap, controllable laboratory for those phenomena: you can hold
-the "world" fixed and vary a persona's traits (here, the Big Five / OCEAN
-model), then watch how group behaviour changes. This project builds the
-plumbing to run such experiments continuously and observe them live, grounded in
-Google DeepMind's [Concordia](https://github.com/google-deepmind/concordia)
-multi-agent framework.
 
 ---
 

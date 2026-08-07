@@ -62,7 +62,7 @@ class Config:
 
         return cls(
             gemini_api_key=key,
-            gemini_model=os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"),
+            gemini_model=os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite"),
             gemini_embedding_model=os.environ.get(
                 "GEMINI_EMBEDDING_MODEL", "gemini-embedding-001"
             ),
